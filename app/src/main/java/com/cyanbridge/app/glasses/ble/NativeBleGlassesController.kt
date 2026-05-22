@@ -44,6 +44,10 @@ class NativeBleGlassesController @Inject constructor(
     private var bleGatt: BluetoothGatt? = null
     private var activeScanCallback: ScanCallback? = null
 
+    /** Address of the most recently connected device. Set by connect() and the scan auto-connect. */
+    var lastConnectedAddress: String? = null
+        private set
+
     // -------------------------------------------------------------------------
     // Scan
     // -------------------------------------------------------------------------
@@ -83,9 +87,10 @@ class NativeBleGlassesController @Inject constructor(
                     scanner.stopScan(this)
                     activeScanCallback = null
                     _status.value = GlassesStatus.Connecting(name)
-                    // Trigger connect — caller should call connect(address) explicitly;
-                    // here we call it directly after finding the device in auto-scan.
-                    // connectGatt is called on the main thread requirement — see connect().
+                    lastConnectedAddress = device.address
+                    bleGatt = device.connectGatt(
+                        context, false, gattCallback, BluetoothDevice.TRANSPORT_LE
+                    )
                 }
             }
 
@@ -126,6 +131,7 @@ class NativeBleGlassesController @Inject constructor(
             return
         }
 
+        lastConnectedAddress = address
         _status.value = GlassesStatus.Connecting(device.name ?: address)
         Timber.d("NativeBle: connecting to $address")
 

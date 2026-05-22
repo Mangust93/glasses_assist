@@ -12,8 +12,7 @@ import com.cyanbridge.app.domain.model.GlassesStatus
 import com.cyanbridge.app.domain.model.Note
 import com.cyanbridge.app.domain.model.VoiceInteraction
 import com.cyanbridge.app.domain.model.VoiceInteractionStatus
-import com.cyanbridge.app.glasses.ble.NativeBleGlassesController
-import com.cyanbridge.app.glasses.fake.FakeGlassesController
+import com.cyanbridge.app.glasses.sync.DeviceSyncManager
 import com.cyanbridge.app.network.DynamicBaseUrlInterceptor
 import com.cyanbridge.app.voice.AudioPlayer
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -21,7 +20,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.time.Instant
@@ -55,19 +53,13 @@ class AssistantViewModel @Inject constructor(
     private val voiceInteractionRepository: VoiceInteractionRepository,
     private val notesRepository: NotesRepository,
     private val settingsRepository: SettingsRepository,
-    private val fakeGlassesController: FakeGlassesController,
-    private val nativeBleGlassesController: NativeBleGlassesController,
+    private val deviceSyncManager: DeviceSyncManager,
     private val audioPlayer: AudioPlayer,
     private val dynamicBaseUrlInterceptor: DynamicBaseUrlInterceptor
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AssistantUiState())
     val uiState: StateFlow<AssistantUiState> = _uiState.asStateFlow()
-
-    // Track which controller is active so we can forward calls
-    private val activeController get() =
-        if (_uiState.value.glassesMode == GlassesMode.FAKE) fakeGlassesController
-        else nativeBleGlassesController
 
     init {
         observeSettings()
@@ -85,12 +77,8 @@ class AssistantViewModel @Inject constructor(
                 dynamicBaseUrlInterceptor.baseUrl = url
             }
         }
-        // Observe glasses status from the active controller
         viewModelScope.launch {
-            settingsRepository.glassesMode.flatMapLatest { mode ->
-                if (mode == GlassesMode.FAKE) fakeGlassesController.status
-                else nativeBleGlassesController.status
-            }.collect { status ->
+            deviceSyncManager.status.collect { status ->
                 _uiState.value = _uiState.value.copy(glassesStatus = status)
             }
         }
@@ -107,14 +95,13 @@ class AssistantViewModel @Inject constructor(
 
     fun startGlassesScan() {
         viewModelScope.launch {
-            runCatching { activeController.startScan() }
-                .onFailure { Timber.e(it, "startGlassesScan failed") }
+            deviceSyncManager.startScan()
         }
     }
 
     fun disconnectGlasses() {
         viewModelScope.launch {
-            runCatching { activeController.disconnect() }
+            deviceSyncManager.disconnect()
         }
     }
 

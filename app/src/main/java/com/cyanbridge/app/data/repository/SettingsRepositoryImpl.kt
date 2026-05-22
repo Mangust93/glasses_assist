@@ -23,6 +23,7 @@ class SettingsRepositoryImpl @Inject constructor(
         val STT_LANGUAGE = stringPreferencesKey("stt_language")
         val TTS_VOICE = stringPreferencesKey("tts_voice")
         val DEBUG_MODE = booleanPreferencesKey("debug_mode")
+        val LAST_CONNECTED_DEVICE_ADDRESS = stringPreferencesKey("last_connected_device_address")
     }
 
     override val hermesBaseUrl: Flow<String> = dataStore.data.map {
@@ -46,6 +47,10 @@ class SettingsRepositoryImpl @Inject constructor(
         it[Keys.DEBUG_MODE] ?: false
     }
 
+    override val lastConnectedDeviceAddress: Flow<String?> = dataStore.data.map {
+        it[Keys.LAST_CONNECTED_DEVICE_ADDRESS]
+    }
+
     override suspend fun setHermesBaseUrl(url: String) {
         dataStore.edit { it[Keys.HERMES_BASE_URL] = url.trimEnd('/') }
     }
@@ -64,5 +69,12 @@ class SettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setDebugMode(enabled: Boolean) {
         dataStore.edit { it[Keys.DEBUG_MODE] = enabled }
+    }
+
+    override suspend fun setLastConnectedDeviceAddress(address: String?) {
+        dataStore.edit {
+            if (address != null) it[Keys.LAST_CONNECTED_DEVICE_ADDRESS] = address
+            else it.remove(Keys.LAST_CONNECTED_DEVICE_ADDRESS)
+        }
     }
 }
