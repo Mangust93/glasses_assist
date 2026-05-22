@@ -1,0 +1,2 @@
+-keep class com.cyanbridge.app.network.model.** { *; }
+-keep class com.cyanbridge.app.data.db.entity.** { *; }
