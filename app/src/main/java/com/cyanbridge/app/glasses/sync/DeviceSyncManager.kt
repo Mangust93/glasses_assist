@@ -6,6 +6,7 @@ import com.cyanbridge.app.domain.model.GlassesMode
 import com.cyanbridge.app.domain.model.GlassesStatus
 import com.cyanbridge.app.glasses.ble.NativeBleGlassesController
 import com.cyanbridge.app.glasses.fake.FakeGlassesController
+import com.cyanbridge.app.glasses.sdk.HeyCyanSdkGlassesController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -21,20 +22,16 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Central device sync layer.
- *
- * Responsibilities:
- * - Keeps a single [status] flow that reflects whichever [GlassesController] is active.
- * - Switches controllers when [GlassesMode] changes in [SettingsRepository].
- * - Auto-starts [FakeGlassesController] on first launch in FAKE mode.
- * - Auto-reconnects to the last BLE address on app start in NATIVE_BLE mode.
- * - Schedules reconnect after unexpected BLE disconnect (5 s cooldown).
- * - Persists the last successfully connected device address to [SettingsRepository].
+ * Central device sync layer. Supports three modes:
+ *   [GlassesMode.FAKE]                 — FakeGlassesController (UI testing)
+ *   [GlassesMode.NATIVE_BLE_DIAGNOSTIC] — NativeBleGlassesController (BLE diagnostics / fallback)
+ *   [GlassesMode.HEYCYAN_SDK]           — HeyCyanSdkGlassesController (real device, confirmed protocol)
  */
 @Singleton
 class DeviceSyncManager @Inject constructor(
     private val fakeController: FakeGlassesController,
     private val nativeController: NativeBleGlassesController,
+    private val sdkController: HeyCyanSdkGlassesController,
     private val settingsRepository: SettingsRepository
 ) {
     private val managerJob = SupervisorJob()
@@ -61,13 +58,12 @@ class DeviceSyncManager @Inject constructor(
     }
 
     val activeController: GlassesController
-        get() = if (currentMode == GlassesMode.FAKE) fakeController else nativeController
+        get() = controllerFor(currentMode)
 
     // -------------------------------------------------------------------------
     // Public API
     // -------------------------------------------------------------------------
 
-    /** Trigger a scan using the currently active controller. */
     suspend fun startScan() {
         reconnectJob?.cancel()
         runCatching { activeController.startScan() }
@@ -75,18 +71,18 @@ class DeviceSyncManager @Inject constructor(
     }
 
     /**
-     * Connect to a specific BLE device address (Native mode only).
-     * The address is saved only after the controller reports a successful connection.
+     * Connect to a specific BLE device address (NATIVE_BLE_DIAGNOSTIC or HEYCYAN_SDK only).
+     * Address is persisted only after the controller reports a successful connection.
      */
     suspend fun connectToDevice(address: String) {
-        if (currentMode != GlassesMode.NATIVE_BLE) return
+        if (currentMode == GlassesMode.FAKE) return
         reconnectJob?.cancel()
         pendingReconnectAddress = address
-        runCatching { nativeController.connect(address) }
+        runCatching { activeController.connect(address) }
             .onFailure { Timber.e(it, "DeviceSyncManager: connectToDevice failed") }
     }
 
-    /** User-initiated disconnect. Clears the saved address so auto-reconnect won't fire. */
+    /** User-initiated disconnect. Clears saved address to prevent auto-reconnect. */
     suspend fun disconnect() {
         reconnectJob?.cancel()
         pendingReconnectAddress = null
@@ -95,7 +91,6 @@ class DeviceSyncManager @Inject constructor(
             .onFailure { Timber.e(it, "DeviceSyncManager: disconnect failed") }
     }
 
-    /** Call from Application.onTerminate or a lifecycle observer to clean up resources. */
     fun release() {
         reconnectJob?.cancel()
         statusObserverJob?.cancel()
@@ -104,6 +99,7 @@ class DeviceSyncManager @Inject constructor(
         managerJob.cancel()
         runCatching { fakeController.release() }
         runCatching { nativeController.release() }
+        runCatching { sdkController.release() }
     }
 
     // -------------------------------------------------------------------------
@@ -121,29 +117,23 @@ class DeviceSyncManager @Inject constructor(
         initJob?.cancel()
 
         if (wasInitialized) {
-            val oldController: GlassesController =
-                if (currentMode == GlassesMode.FAKE) fakeController else nativeController
-            runCatching { oldController.release() }
+            runCatching { controllerFor(currentMode).release() }
                 .onFailure { Timber.e(it, "DeviceSyncManager: release of old controller failed") }
         }
 
         currentMode = newMode
         Timber.d("DeviceSyncManager: switching to $newMode")
 
-        val controllerFlow =
-            if (newMode == GlassesMode.FAKE) fakeController.status else nativeController.status
-
         statusObserverJob = scope.launch {
-            controllerFlow.collect { s ->
+            controllerFor(newMode).status.collect { s ->
                 _status.value = s
-                if (s is GlassesStatus.Connected && currentMode == GlassesMode.NATIVE_BLE) {
-                    // Persist address whenever a native connection is established
-                    nativeController.lastConnectedAddress?.let { addr ->
+                if (s is GlassesStatus.Connected && currentMode != GlassesMode.FAKE) {
+                    lastAddressFor(currentMode)?.let { addr ->
                         pendingReconnectAddress = addr
                         settingsRepository.setLastConnectedDeviceAddress(addr)
                     }
                 }
-                if (s is GlassesStatus.Disconnected && currentMode == GlassesMode.NATIVE_BLE) {
+                if (s is GlassesStatus.Disconnected && currentMode != GlassesMode.FAKE) {
                     scheduleReconnect()
                 }
             }
@@ -155,13 +145,22 @@ class DeviceSyncManager @Inject constructor(
                     runCatching { fakeController.startScan() }
                         .onFailure { Timber.e(it, "DeviceSyncManager: fake startScan failed") }
                 }
-                GlassesMode.NATIVE_BLE -> {
+                GlassesMode.NATIVE_BLE_DIAGNOSTIC -> {
                     val savedAddress = settingsRepository.lastConnectedDeviceAddress.first()
                     if (savedAddress != null) {
-                        Timber.d("DeviceSyncManager: auto-reconnecting to $savedAddress")
+                        Timber.d("DeviceSyncManager: NATIVE_BLE_DIAGNOSTIC auto-reconnecting to $savedAddress")
                         pendingReconnectAddress = savedAddress
                         runCatching { nativeController.connect(savedAddress) }
-                            .onFailure { Timber.e(it, "DeviceSyncManager: auto-reconnect failed") }
+                            .onFailure { Timber.e(it, "DeviceSyncManager: native auto-reconnect failed") }
+                    }
+                }
+                GlassesMode.HEYCYAN_SDK -> {
+                    val savedAddress = settingsRepository.lastConnectedDeviceAddress.first()
+                    if (savedAddress != null) {
+                        Timber.d("DeviceSyncManager: HEYCYAN_SDK auto-reconnecting to $savedAddress")
+                        pendingReconnectAddress = savedAddress
+                        runCatching { sdkController.connect(savedAddress) }
+                            .onFailure { Timber.e(it, "DeviceSyncManager: sdk auto-reconnect failed") }
                     }
                 }
             }
@@ -172,14 +171,26 @@ class DeviceSyncManager @Inject constructor(
         val address = pendingReconnectAddress ?: return
         reconnectJob?.cancel()
         reconnectJob = scope.launch {
-            Timber.d("DeviceSyncManager: reconnect scheduled in ${RECONNECT_DELAY_MS}ms to $address")
+            Timber.d("DeviceSyncManager: reconnect in ${RECONNECT_DELAY_MS}ms to $address")
             delay(RECONNECT_DELAY_MS)
-            if (currentMode == GlassesMode.NATIVE_BLE && _status.value is GlassesStatus.Disconnected) {
+            if (currentMode != GlassesMode.FAKE && _status.value is GlassesStatus.Disconnected) {
                 Timber.d("DeviceSyncManager: executing reconnect to $address")
-                runCatching { nativeController.connect(address) }
+                runCatching { activeController.connect(address) }
                     .onFailure { Timber.e(it, "DeviceSyncManager: scheduled reconnect failed") }
             }
         }
+    }
+
+    private fun controllerFor(mode: GlassesMode): GlassesController = when (mode) {
+        GlassesMode.FAKE -> fakeController
+        GlassesMode.NATIVE_BLE_DIAGNOSTIC -> nativeController
+        GlassesMode.HEYCYAN_SDK -> sdkController
+    }
+
+    private fun lastAddressFor(mode: GlassesMode): String? = when (mode) {
+        GlassesMode.NATIVE_BLE_DIAGNOSTIC -> nativeController.lastConnectedAddress
+        GlassesMode.HEYCYAN_SDK -> sdkController.lastConnectedAddress
+        GlassesMode.FAKE -> null
     }
 
     companion object {

@@ -138,26 +138,42 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                     FilterChip(
                         selected = glassesMode == GlassesMode.FAKE,
                         onClick = { viewModel.setGlassesMode(GlassesMode.FAKE) },
-                        label = { Text("Fake (симуляция)") },
+                        label = { Text("Fake") },
                         leadingIcon = if (glassesMode == GlassesMode.FAKE) {
                             { Icon(Icons.Default.Check, null) }
                         } else null
                     )
                     FilterChip(
-                        selected = glassesMode == GlassesMode.NATIVE_BLE,
-                        onClick = { viewModel.setGlassesMode(GlassesMode.NATIVE_BLE) },
-                        label = { Text("Native BLE") },
-                        leadingIcon = if (glassesMode == GlassesMode.NATIVE_BLE) {
+                        selected = glassesMode == GlassesMode.NATIVE_BLE_DIAGNOSTIC,
+                        onClick = { viewModel.setGlassesMode(GlassesMode.NATIVE_BLE_DIAGNOSTIC) },
+                        label = { Text("BLE Диагностика") },
+                        leadingIcon = if (glassesMode == GlassesMode.NATIVE_BLE_DIAGNOSTIC) {
+                            { Icon(Icons.Default.Check, null) }
+                        } else null
+                    )
+                    FilterChip(
+                        selected = glassesMode == GlassesMode.HEYCYAN_SDK,
+                        onClick = { viewModel.setGlassesMode(GlassesMode.HEYCYAN_SDK) },
+                        label = { Text("HeyCyan SDK") },
+                        leadingIcon = if (glassesMode == GlassesMode.HEYCYAN_SDK) {
                             { Icon(Icons.Default.Check, null) }
                         } else null
                     )
                 }
-                if (glassesMode == GlassesMode.NATIVE_BLE) {
-                    Text(
-                        "BLE скелет подключён. Реальные команды будут доступны после получения протокола от производителя.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                when (glassesMode) {
+                    GlassesMode.NATIVE_BLE_DIAGNOSTIC ->
+                        Text(
+                            "Режим диагностики BLE. Подключается и логирует сервисы/характеристики устройства.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    GlassesMode.HEYCYAN_SDK ->
+                        Text(
+                            "Реальное подключение к CY 01_24E5 с подтверждёнными командами (UUID сервиса: 7905fff0...).",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    else -> {}
                 }
             }
 
