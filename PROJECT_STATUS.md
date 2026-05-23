@@ -1,5 +1,5 @@
 # PROJECT_STATUS.md — CyanBridge Android App
-**Итерация 1 | Дата:** 2026-05-21
+**Итерация 1 | Дата:** 2026-05-21 | **Итерация 1.5 (Device Sync Layer) | Дата:** 2026-05-22
 
 ---
 
@@ -39,6 +39,13 @@
 - [x] OkHttp с логированием и таймаутами
 
 ### Слой очков
+- [x] `DeviceSyncManager` (`glasses/sync/`) — центральный слой синхронизации:
+  - Единый `Flow<GlassesStatus>` для всего UI
+  - Автоматически запускает `FakeGlassesController.startScan()` при старте в FAKE-режиме
+  - Автоматически переподключается к последнему BLE-адресу при старте в NATIVE_BLE-режиме
+  - Сохраняет последний адрес в DataStore через `SettingsRepository`
+  - Планирует переподключение (5 с) при неожиданном BLE-disconnect
+  - Переключает контроллер при смене `GlassesMode` в настройках
 - [x] `FakeGlassesController` — живая симуляция: scan → connecting → connected, Battery drain tick
 - [x] `NativeBleGlassesController` — честный BLE-скелет:
   - BLE scan с фильтром по имени "HeyCyan"
@@ -46,6 +53,8 @@
   - Service discovery с логированием всех UUID
   - Notification subscribe (закомментирован до получения UUID)
   - `onCharacteristicChanged` для API 33+ и legacy API
+  - [fix] Завершён незавершённый stub в `startScan()`: теперь при обнаружении устройства вызывается `connectGatt` немедленно
+  - [new] `lastConnectedAddress: String?` — публичное поле для доступа `DeviceSyncManager`
 - [x] `HeyCyanProtocol` — все методы с `ProtocolNotWiredException`
 - [x] `ProtocolNotWiredException` — чёткое сообщение "не выдумываем"
 
@@ -79,6 +88,10 @@
   - Debug mode
   - Очистка локальной истории
 - [x] `StatusChip`, `ErrorCard`, `LoadingIndicator` — shared компоненты
+
+### Настройки
+- [x] `lastConnectedDeviceAddress: Flow<String?>` добавлен в `SettingsRepository` + `SettingsRepositoryImpl`
+- [x] `setLastConnectedDeviceAddress(address: String?)` — сохраняет/очищает адрес в DataStore
 
 ### Разрешения Android
 - [x] RECORD_AUDIO
