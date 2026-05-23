@@ -29,7 +29,7 @@ import javax.inject.Singleton
  * - Auto-starts [FakeGlassesController] on first launch in FAKE mode.
  * - Auto-reconnects to the last BLE address on app start in NATIVE_BLE mode.
  * - Schedules reconnect after unexpected BLE disconnect (5 s cooldown).
- * - Persists the last successfully initiated device address to [SettingsRepository].
+ * - Persists the last successfully connected device address to [SettingsRepository].
  */
 @Singleton
 class DeviceSyncManager @Inject constructor(
@@ -37,7 +37,8 @@ class DeviceSyncManager @Inject constructor(
     private val nativeController: NativeBleGlassesController,
     private val settingsRepository: SettingsRepository
 ) {
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val managerJob = SupervisorJob()
+    private val scope = CoroutineScope(Dispatchers.IO + managerJob)
 
     private val _status = MutableStateFlow<GlassesStatus>(GlassesStatus.Idle)
     val status: Flow<GlassesStatus> = _status.asStateFlow()
@@ -47,11 +48,12 @@ class DeviceSyncManager @Inject constructor(
 
     private var statusObserverJob: Job? = null
     private var reconnectJob: Job? = null
+    private var modeObserverJob: Job? = null
     private var initJob: Job? = null
     private var firstEmission = true
 
     init {
-        scope.launch {
+        modeObserverJob = scope.launch {
             settingsRepository.glassesMode.collect { mode ->
                 switchToMode(mode)
             }
@@ -74,13 +76,12 @@ class DeviceSyncManager @Inject constructor(
 
     /**
      * Connect to a specific BLE device address (Native mode only).
-     * Saves the address so it can be used for auto-reconnect.
+     * The address is saved only after the controller reports a successful connection.
      */
     suspend fun connectToDevice(address: String) {
         if (currentMode != GlassesMode.NATIVE_BLE) return
         reconnectJob?.cancel()
         pendingReconnectAddress = address
-        settingsRepository.setLastConnectedDeviceAddress(address)
         runCatching { nativeController.connect(address) }
             .onFailure { Timber.e(it, "DeviceSyncManager: connectToDevice failed") }
     }
@@ -98,7 +99,9 @@ class DeviceSyncManager @Inject constructor(
     fun release() {
         reconnectJob?.cancel()
         statusObserverJob?.cancel()
+        modeObserverJob?.cancel()
         initJob?.cancel()
+        managerJob.cancel()
         runCatching { fakeController.release() }
         runCatching { nativeController.release() }
     }

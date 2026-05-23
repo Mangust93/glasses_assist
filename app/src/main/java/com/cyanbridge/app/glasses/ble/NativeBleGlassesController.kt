@@ -88,6 +88,7 @@ class NativeBleGlassesController @Inject constructor(
                     activeScanCallback = null
                     _status.value = GlassesStatus.Connecting(name)
                     lastConnectedAddress = device.address
+                    closeGatt()
                     bleGatt = device.connectGatt(
                         context, false, gattCallback, BluetoothDevice.TRANSPORT_LE
                     )
@@ -135,6 +136,7 @@ class NativeBleGlassesController @Inject constructor(
         _status.value = GlassesStatus.Connecting(device.name ?: address)
         Timber.d("NativeBle: connecting to $address")
 
+        closeGatt()
         bleGatt = device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
     }
 
@@ -164,7 +166,11 @@ class NativeBleGlassesController @Inject constructor(
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
                     Timber.d("NativeBle: disconnected from $name")
-                    bleGatt = null
+                    if (bleGatt == gatt) {
+                        closeGatt()
+                    } else {
+                        gatt?.close()
+                    }
                     _status.value = GlassesStatus.Disconnected
                 }
             }
@@ -288,6 +294,11 @@ class NativeBleGlassesController @Inject constructor(
 
     private fun ByteArray.toHexString(): String =
         joinToString(" ") { "%02x".format(it) }
+
+    private fun closeGatt() {
+        bleGatt?.close()
+        bleGatt = null
+    }
 
     companion object {
         private val CLIENT_CHARACTERISTIC_CONFIG =
