@@ -31,19 +31,22 @@ import javax.inject.Singleton
 /**
  * GlassesController for HEYCYAN_SDK mode.
  *
- * Uses the confirmed BLE service UUID and command bytes from SDK reverse-engineering.
- * No AAR dependency — works with native Android BLE stack.
+ * Prepared adapter for the official HeyCyan SDK.
+ *
+ * The AAR is not committed to the repository. Until glasses_sdk_20250723_v01.aar
+ * is placed in app/libs/ and [HeyCyanSdkBridge] is wired to the official SDK, this
+ * controller must fail explicitly instead of pretending SDK commands work.
  *
  * Target device: CY 01_24E5  (MAC: 91:8E:55:C7:24:E5)
- * Primary service: 7905fff0-b5ce-4e99-a40f-4b1e122d00d0
+ * Candidate primary service: 7905fff0-b5ce-4e99-a40f-4b1e122d00d0
  *
  * Characteristic UUIDs are auto-discovered at runtime by property flags (writable / notify).
  * After connecting with a real device, characteristic UUIDs will be logged — paste them into
  * [HeyCyanProtocol.COMMAND_CHARACTERISTIC_UUID] and [HeyCyanProtocol.NOTIFY_CHARACTERISTIC_UUID]
  * to skip discovery on future connections.
  *
- * If [HeyCyanSdkBridge.isAarAvailable] is true, commands are delegated to the official AAR SDK.
- * Otherwise the controller sends raw BLE bytes with the confirmed command sequences.
+ * Native BLE service discovery remains here only as implementation scaffolding for later
+ * verification. Use NATIVE_BLE_DIAGNOSTIC mode for fallback/diagnostic BLE work.
  */
 @Singleton
 class HeyCyanSdkGlassesController @Inject constructor(
@@ -67,9 +70,9 @@ class HeyCyanSdkGlassesController @Inject constructor(
 
     init {
         if (bridge.isAarAvailable()) {
-            Timber.d("HeyCyanSdk: official AAR bridge available — commands will delegate to SDK")
+            Timber.d("HeyCyanSdk: official AAR bridge available; commands will delegate to SDK")
         } else {
-            Timber.d("HeyCyanSdk: AAR not present — using native BLE protocol with confirmed bytes")
+            Timber.w("HeyCyanSdk: AAR not present; SDK mode will report unavailable")
         }
     }
 
@@ -79,6 +82,7 @@ class HeyCyanSdkGlassesController @Inject constructor(
 
     @SuppressLint("MissingPermission")
     override suspend fun startScan() {
+        ensureAarAvailable()
         if (!hasBluetoothPermissions()) {
             _status.value = GlassesStatus.Error("Bluetooth permissions not granted")
             return
@@ -139,6 +143,7 @@ class HeyCyanSdkGlassesController @Inject constructor(
 
     @SuppressLint("MissingPermission")
     override suspend fun connect(address: String) {
+        ensureAarAvailable()
         if (!hasBluetoothPermissions()) {
             _status.value = GlassesStatus.Error("Bluetooth permissions not granted")
             return
@@ -165,18 +170,24 @@ class HeyCyanSdkGlassesController @Inject constructor(
     // -------------------------------------------------------------------------
 
     override suspend fun takePhoto() {
+        ensureAarAvailable()
         sendCommand(HeyCyanProtocol.CMD_TAKE_PHOTO)
     }
 
     override suspend fun startRecording() {
+        ensureAarAvailable()
         sendCommand(HeyCyanProtocol.CMD_VIDEO_START)
     }
 
     override suspend fun stopRecording() {
+        ensureAarAvailable()
         sendCommand(HeyCyanProtocol.CMD_VIDEO_STOP)
     }
 
-    override suspend fun getBatteryLevel(): Int? = null  // battery level comes via notification
+    override suspend fun getBatteryLevel(): Int? {
+        ensureAarAvailable()
+        return bridge.getBatteryLevel()
+    }
 
     @SuppressLint("MissingPermission")
     override fun release() {
@@ -299,6 +310,14 @@ class HeyCyanSdkGlassesController @Inject constructor(
         Timber.d("HeyCyanSdk: notification ${data.toHexString()}")
         val updated = HeyCyanSdkStateMapper.mapNotification(data, _status.value)
         if (updated != null) _status.value = updated
+    }
+
+    private fun ensureAarAvailable() {
+        if (bridge.isAarAvailable()) return
+        val message = "HeyCyan SDK AAR is not available. Place glasses_sdk_20250723_v01.aar " +
+            "in app/libs/ and wire HeyCyanSdkBridgeImpl before using HEYCYAN_SDK mode."
+        _status.value = GlassesStatus.Error(message)
+        throw SdkNotAvailableException(message)
     }
 
     @SuppressLint("MissingPermission")

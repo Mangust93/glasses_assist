@@ -169,7 +169,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                         )
                     GlassesMode.HEYCYAN_SDK ->
                         Text(
-                            "Реальное подключение к CY 01_24E5 с подтверждёнными командами (UUID сервиса: 7905fff0...).",
+                            "SDK adapter prepared. Нужен glasses_sdk_20250723_v01.aar в app/libs/; UUID/команды pending verification.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

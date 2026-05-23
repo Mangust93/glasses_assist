@@ -8,8 +8,8 @@ import android.content.Context
  * Implemented by [HeyCyanSdkBridgeImpl], which is a documented stub until the AAR is placed
  * in app/libs/. See docs/heycyan-sdk-analysis.md for the full SDK API reference.
  *
- * [HeyCyanSdkGlassesController] uses the confirmed native BLE protocol and queries [isAarAvailable]
- * to decide whether to delegate commands to this bridge or use direct BLE writes.
+ * [HeyCyanSdkGlassesController] queries [isAarAvailable] before running SDK-mode
+ * operations. Without the AAR, SDK-mode operations must fail explicitly.
  */
 interface HeyCyanSdkBridge {
 

@@ -8,7 +8,7 @@ import timber.log.Timber
 /**
  * Maps raw BLE notification bytes to [GlassesStatus] updates.
  *
- * Notification frame structure (confirmed from SDK reverse-engineering):
+ * Notification frame candidates from SDK/sample reverse-engineering:
  *   byte[6] == 0x08 → device Wi-Fi IP; bytes[7..10] are IPv4 octets
  *   byte[6] == 0x09 → P2P/Wi-Fi error; byte[7] == 0xFF is common and non-fatal
  *

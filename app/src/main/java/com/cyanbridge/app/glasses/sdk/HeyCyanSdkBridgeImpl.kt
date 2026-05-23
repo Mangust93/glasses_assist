@@ -38,12 +38,12 @@ import javax.inject.Singleton
  *   BleScannerHelper.getInstance()
  *       .scanDevice(context, null, scanWrapperCallback)
  *
- *   QCBluetoothCallbackCloneReceiver  ← base class for BLE event callbacks
+ *   QCBluetoothCallbackCloneReceiver  <- base class for BLE event callbacks
  *       override connectStatue(device, connected)
  *       override onServiceDiscovered()
  *       override onCharacteristicChange(address, uuid, data)
  *
- * ── CAPTURE COMMANDS (all via LargeDataHandler.glassesControl) ───────────────
+ * ── CAPTURE COMMAND CANDIDATES (pending local AAR/real-device verification) ──
  *   Take photo:       byteArrayOf(0x02, 0x01, 0x06, 0x02, 0x02)
  *   Video start:      byteArrayOf(0x02, 0x01, 0x02)
  *   Video stop:       byteArrayOf(0x02, 0x01, 0x03)

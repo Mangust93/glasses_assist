@@ -5,6 +5,11 @@
 - `ebowwa/HeyCyanSmartGlassesSDK`
 - `FerSaiyan/Alternative-HeyCyan-App-and-SDK`
 
+**Verification status:** this repository does not include
+`app/libs/glasses_sdk_20250723_v01.aar`, a local SDK sample, or a real GATT dump from
+CY 01_24E5. UUIDs, command bytes, and notification frames below are candidates from
+external source analysis and remain pending local AAR/sample and real-device verification.
+
 ---
 
 ## AAR File
@@ -23,12 +28,12 @@ implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
 
 ---
 
-## BLE Service UUIDs
+## BLE Service UUID Candidates
 
 | Constant | UUID | Notes |
 |---|---|---|
-| `SERVICE_UUID` (primary) | `7905fff0-b5ce-4e99-a40f-4b1e122d00d0` | `QCSDKSERVERUUID1` in iOS framework |
-| `SECONDARY_SERVICE_UUID` | `6e40fff0-b5a3-f393-e0a9-e50e24dcca9e` | `QCSDKSERVERUUID2`, Nordic UART-pattern |
+| `SERVICE_UUID` (primary) | `7905fff0-b5ce-4e99-a40f-4b1e122d00d0` | Candidate from `QCSDKSERVERUUID1` in iOS framework |
+| `SECONDARY_SERVICE_UUID` | `6e40fff0-b5a3-f393-e0a9-e50e24dcca9e` | Candidate from `QCSDKSERVERUUID2`, Nordic UART-pattern |
 
 **Characteristic UUIDs** are NOT directly exposed in SDK headers.  
 `HeyCyanSdkGlassesController` auto-discovers them by property flags (PROPERTY_WRITE, PROPERTY_NOTIFY).  
@@ -37,9 +42,11 @@ Use `NATIVE_BLE_DIAGNOSTIC` mode to log real UUIDs from the device, then fill in
 
 ---
 
-## BLE Command Bytes
+## BLE Command Byte Candidates
 
-All confirmed from `LargeDataHandler.glassesControl(ByteArray)` calls in AAR sample:
+Candidates attributed to `LargeDataHandler.glassesControl(ByteArray)` calls in external
+SDK/sample notes. They are not confirmed in this repository until the AAR/sample is added
+locally and verified against the real device:
 
 | Action | Bytes (hex) |
 |---|---|
@@ -57,12 +64,12 @@ All confirmed from `LargeDataHandler.glassesControl(ByteArray)` calls in AAR sam
 
 ---
 
-## BLE Notification Frame
+## BLE Notification Frame Candidates
 
 | byte[6] | Meaning | Data |
 |---|---|---|
-| `0x08` | Device Wi-Fi IP assigned | bytes [7..10] = IPv4 octets |
-| `0x09` | P2P/Wi-Fi error | byte[7] == 0xFF is common and non-fatal |
+| `0x08` | Candidate: device Wi-Fi IP assigned | bytes [7..10] = IPv4 octets |
+| `0x09` | Candidate: P2P/Wi-Fi error | byte[7] == 0xFF is reported as common and non-fatal |
 
 Example IP extraction:
 ```kotlin
@@ -211,14 +218,14 @@ SDK may return wrong credentials. Hardcoded fallback: **`123456789`**
 | Component | File | Status |
 |---|---|---|
 | GlassesMode enum | `domain/model/GlassesStatus.kt` | ✅ FAKE / NATIVE_BLE_DIAGNOSTIC / HEYCYAN_SDK |
-| BLE protocol constants | `glasses/protocol/HeyCyanProtocol.kt` | ✅ service UUIDs + command bytes filled in |
+| BLE protocol constants | `glasses/protocol/HeyCyanProtocol.kt` | ⚠️ candidate service UUIDs + command bytes, pending verification |
 | SDK adapter interface | `glasses/sdk/HeyCyanSdkBridge.kt` | ✅ created |
 | SDK adapter stub | `glasses/sdk/HeyCyanSdkBridgeImpl.kt` | ✅ stub with full AAR API docs |
 | State mapper | `glasses/sdk/HeyCyanSdkStateMapper.kt` | ✅ notification frame parsing |
-| SDK controller | `glasses/sdk/HeyCyanSdkGlassesController.kt` | ✅ native BLE, confirmed protocol |
+| SDK controller | `glasses/sdk/HeyCyanSdkGlassesController.kt` | ⚠️ adapter prepared; AAR required before SDK mode works |
 | Wi-Fi transfer | `glasses/wifi/HeyCyanWiFiTransfer.kt` | 📋 TODO structure |
 | Device sync | `glasses/sync/DeviceSyncManager.kt` | ✅ 3-mode support |
 | DI binding | `core/di/GlassesModule.kt` | ✅ bridge binding |
 | AAR dependency | `app/build.gradle.kts` | ✅ fileTree in libs/ |
-| Cleartext HTTP | `AndroidManifest.xml` + `network_security_config.xml` | ✅ added |
+| Cleartext HTTP | `AndroidManifest.xml` + `network_security_config.xml` | ✅ limited to candidate local hotspot IPs |
 | AAR file | `app/libs/glasses_sdk_20250723_v01.aar` | ❌ MISSING — see app/libs/README.md |

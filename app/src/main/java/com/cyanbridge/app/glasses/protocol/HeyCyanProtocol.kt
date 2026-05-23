@@ -5,7 +5,7 @@ import java.util.UUID
 /**
  * BLE protocol constants for HeyCyan smart glasses (CY 01_24E5, MAC: 91:8E:55:C7:24:E5).
  *
- * Service UUIDs and command bytes confirmed via SDK reverse-engineering:
+ * Service UUIDs and command bytes are candidates from SDK/sample reverse-engineering:
  *   - ebowwa/HeyCyanSmartGlassesSDK
  *   - FerSaiyan/Alternative-HeyCyan-App-and-SDK
  *
@@ -15,10 +15,12 @@ import java.util.UUID
  */
 object HeyCyanProtocol {
 
-    // Primary BLE service UUID (confirmed: QCSDKSERVERUUID1 in iOS SDK framework)
+    // Primary BLE service UUID candidate (QCSDKSERVERUUID1 in iOS SDK framework).
+    // Pending verification against local AAR/sample and real CY 01_24E5 GATT.
     val SERVICE_UUID: UUID = UUID.fromString("7905fff0-b5ce-4e99-a40f-4b1e122d00d0")
 
-    // Secondary service UUID (Nordic UART-pattern: QCSDKSERVERUUID2)
+    // Secondary service UUID candidate (QCSDKSERVERUUID2, Nordic UART-pattern).
+    // Pending verification against local AAR/sample and real CY 01_24E5 GATT.
     val SECONDARY_SERVICE_UUID: UUID = UUID.fromString("6e40fff0-b5a3-f393-e0a9-e50e24dcca9e")
 
     // Characteristic UUIDs: not individually exposed in SDK headers.
@@ -28,7 +30,8 @@ object HeyCyanProtocol {
     val NOTIFY_CHARACTERISTIC_UUID: UUID? = null   // TODO: confirm from BLE scan log
 
     // -------------------------------------------------------------------------
-    // Command byte sequences (confirmed: LargeDataHandler.glassesControl calls)
+    // Command byte sequence candidates from external SDK/sample notes.
+    // Pending verification with the AAR in app/libs/ and real device behavior.
     // -------------------------------------------------------------------------
 
     /** Switch to camera mode (device UI shows viewfinder). */
@@ -71,7 +74,7 @@ object HeyCyanProtocol {
 
     fun encodeGetBattery(): ByteArray =
         throw ProtocolNotWiredException(
-            "Battery is reported via BLE notifications — no confirmed explicit query command."
+            "Battery is expected via BLE notifications; no verified explicit query command yet."
         )
 
     // -------------------------------------------------------------------------

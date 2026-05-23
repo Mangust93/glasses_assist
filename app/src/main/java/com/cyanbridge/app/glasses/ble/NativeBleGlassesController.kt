@@ -193,7 +193,7 @@ class NativeBleGlassesController @Inject constructor(
                 }
             }
 
-            // TODO: Once HeyCyanProtocol.NOTIFY_CHARACTERISTIC_UUID is confirmed,
+            // TODO: Once HeyCyanProtocol.NOTIFY_CHARACTERISTIC_UUID is verified,
             // subscribe to notifications:
             //
             // val service = gatt?.getService(HeyCyanProtocol.SERVICE_UUID) ?: return
@@ -245,7 +245,7 @@ class NativeBleGlassesController @Inject constructor(
 
     override suspend fun takePhoto() {
         throw ProtocolNotWiredException(
-            "NativeBle.takePhoto: waiting for HeyCyanProtocol.encodeTakePhoto() to be confirmed"
+            "NativeBle.takePhoto: waiting for HeyCyanProtocol.encodeTakePhoto() to be verified"
         )
     }
 
@@ -262,7 +262,7 @@ class NativeBleGlassesController @Inject constructor(
     }
 
     override suspend fun getBatteryLevel(): Int? {
-        // TODO: implement via HeyCyanProtocol.encodeGetBattery() once confirmed
+        // TODO: implement via HeyCyanProtocol.encodeGetBattery() once verified
         return null
     }
 

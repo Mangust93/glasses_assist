@@ -13,7 +13,7 @@ glasses_sdk_20250723_v01.aar  (387 KB)
 
 ## After placing the AAR
 
-1. `./gradlew assembleDebug` — the fileTree dependency in `build.gradle.kts` picks it up automatically.
+1. `./gradlew assembleDebug` - the fileTree dependency in `build.gradle.kts` picks it up automatically.
 2. Open `HeyCyanSdkBridgeImpl.kt` and replace each `notAvailable()` call with the corresponding
    SDK call (exact signatures are documented in the file header).
 3. Set `isAarAvailable()` to return `true` in `HeyCyanSdkBridgeImpl`.
@@ -25,6 +25,9 @@ glasses_sdk_20250723_v01.aar  (387 KB)
    LocalBroadcastManager.getInstance(this)
        .registerReceiver(bleReceiver, BleAction.getIntentFilter())
    ```
+
+Until this file is added and `HeyCyanSdkBridgeImpl` is wired, `HEYCYAN_SDK` mode reports
+`SdkNotAvailableException`. Use `NATIVE_BLE_DIAGNOSTIC` for raw BLE/GATT discovery.
 
 ## Gradle dependency (already in build.gradle.kts)
 

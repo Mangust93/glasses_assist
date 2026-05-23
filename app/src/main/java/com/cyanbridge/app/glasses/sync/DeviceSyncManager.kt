@@ -25,7 +25,7 @@ import javax.inject.Singleton
  * Central device sync layer. Supports three modes:
  *   [GlassesMode.FAKE]                 — FakeGlassesController (UI testing)
  *   [GlassesMode.NATIVE_BLE_DIAGNOSTIC] — NativeBleGlassesController (BLE diagnostics / fallback)
- *   [GlassesMode.HEYCYAN_SDK]           — HeyCyanSdkGlassesController (real device, confirmed protocol)
+ *   [GlassesMode.HEYCYAN_SDK]           — HeyCyanSdkGlassesController (official AAR required)
  */
 @Singleton
 class DeviceSyncManager @Inject constructor(
