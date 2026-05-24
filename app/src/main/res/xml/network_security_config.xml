@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!--
+        Allow plain HTTP to device hotspot IPs for Wi-Fi media transfer.
+        The glasses create a local hotspot — HTTPS is not supported on port 80.
+        See HeyCyanWiFiTransfer.CANDIDATE_IPS for the full list.
+    -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">192.168.43.1</domain>
+        <domain includeSubdomains="false">192.168.4.1</domain>
+        <domain includeSubdomains="false">192.168.31.1</domain>
+        <domain includeSubdomains="false">192.168.1.1</domain>
+        <domain includeSubdomains="false">192.168.0.1</domain>
+        <domain includeSubdomains="false">192.168.100.1</domain>
+        <domain includeSubdomains="false">192.168.123.1</domain>
+        <domain includeSubdomains="false">192.168.137.1</domain>
+        <domain includeSubdomains="false">10.0.0.1</domain>
+        <domain includeSubdomains="false">172.20.10.1</domain>
+    </domain-config>
+</network-security-config>

@@ -57,6 +57,10 @@ android {
 }
 
 dependencies {
+    // HeyCyan SDK AAR (place glasses_sdk_20250723_v01.aar in app/libs/ to activate)
+    // See docs/heycyan-sdk-analysis.md and app/libs/README.md for instructions.
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
+
     // Compose BOM
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)

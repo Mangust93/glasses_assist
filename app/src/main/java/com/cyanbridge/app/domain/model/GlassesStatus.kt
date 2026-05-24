@@ -2,7 +2,8 @@ package com.cyanbridge.app.domain.model
 
 enum class GlassesMode {
     FAKE,
-    NATIVE_BLE
+    NATIVE_BLE_DIAGNOSTIC,
+    HEYCYAN_SDK
 }
 
 sealed class GlassesStatus {
