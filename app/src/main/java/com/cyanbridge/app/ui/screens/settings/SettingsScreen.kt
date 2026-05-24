@@ -40,12 +40,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cyanbridge.app.domain.model.GlassesMode
+import com.cyanbridge.app.glasses.sdk.SdkDiagnosticsState
 import com.cyanbridge.app.ui.theme.DarkCard
 import com.cyanbridge.app.ui.theme.StatusError
 import com.cyanbridge.app.ui.theme.StatusOnline
@@ -59,6 +62,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val ttsVoice by viewModel.ttsVoice.collectAsStateWithLifecycle()
     val isDebugMode by viewModel.isDebugMode.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val sdkDiagnostics by viewModel.sdkDiagnostics.collectAsStateWithLifecycle()
 
     var urlDraft by remember(hermesBaseUrl) { mutableStateOf(hermesBaseUrl) }
     var voiceDraft by remember(ttsVoice) { mutableStateOf(ttsVoice) }
@@ -169,12 +173,26 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                         )
                     GlassesMode.HEYCYAN_SDK ->
                         Text(
-                            "SDK adapter prepared. Нужен glasses_sdk_20250723_v01.aar в app/libs/; UUID/команды pending verification.",
+                            "HeyCyan SDK mode активен. AAR присутствует. Используйте диагностику ниже.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = StatusOnline
                         )
                     else -> {}
                 }
+            }
+
+            if (glassesMode == GlassesMode.HEYCYAN_SDK) {
+                SdkDiagnosticsSection(
+                    state = sdkDiagnostics,
+                    onInit = viewModel::runSdkInit,
+                    onScan = viewModel::runSdkScan,
+                    onStopScan = viewModel::runSdkStopScan,
+                    onDisconnect = viewModel::runSdkDisconnect,
+                    onBattery = viewModel::runSdkBattery,
+                    onDeviceInfo = viewModel::runSdkDeviceInfo,
+                    onMediaCounts = viewModel::runSdkMediaCounts,
+                    onThumbnails = viewModel::runSdkThumbnails
+                )
             }
 
             // ---- STT ----
@@ -270,5 +288,105 @@ private fun SettingsSection(
             Spacer(modifier = Modifier.height(12.dp))
             content()
         }
+    }
+}
+
+@Composable
+private fun SdkDiagnosticsSection(
+    state: SdkDiagnosticsState,
+    onInit: () -> Unit,
+    onScan: () -> Unit,
+    onStopScan: () -> Unit,
+    onDisconnect: () -> Unit,
+    onBattery: () -> Unit,
+    onDeviceInfo: () -> Unit,
+    onMediaCounts: () -> Unit,
+    onThumbnails: () -> Unit
+) {
+    SettingsSection(title = "HeyCyan SDK Диагностика") {
+        // Status rows
+        SdkStatusRow("AAR present", if (state.aarPresent) "yes" else "no", state.aarPresent)
+        SdkStatusRow("SDK initialized", if (state.sdkInitialized) "yes" else "no", state.sdkInitialized)
+        SdkStatusRow("Connected", if (state.connected) "yes" else "no", state.connected)
+        SdkStatusRow("Ready", if (state.ready) "yes" else "no", state.ready)
+
+        state.battery?.let { SdkStatusRow("Battery", "$it%${if (state.isCharging == true) " (charging)" else ""}") }
+        state.firmwareVersion?.let { SdkStatusRow("FW version", it) }
+        state.hardwareVersion?.let { SdkStatusRow("HW version", it) }
+        state.wifiFirmwareVersion?.let { SdkStatusRow("WiFi FW", it) }
+        state.imageCount?.let { SdkStatusRow("Images", "$it") }
+        state.videoCount?.let { SdkStatusRow("Videos", "$it") }
+        state.recordCount?.let { SdkStatusRow("Records", "$it") }
+        state.p2pIp?.let { SdkStatusRow("P2P IP", it) }
+        state.thumbnailsReceived?.let { SdkStatusRow("Thumbnails rx", "$it chunks") }
+
+        state.lastEvent?.let {
+            Spacer(Modifier.height(4.dp))
+            Text("Event: $it", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontFamily = FontFamily.Monospace)
+        }
+        state.lastError?.let {
+            Text("Error: $it", style = MaterialTheme.typography.bodySmall,
+                color = StatusError,
+                fontFamily = FontFamily.Monospace)
+        }
+
+        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+        // Action buttons
+        Text("Действия", style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(4.dp))
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = onInit, modifier = Modifier.weight(1f)) { Text("Init SDK") }
+            Button(onClick = onScan, modifier = Modifier.weight(1f)) { Text("Scan") }
+            Button(onClick = onStopScan, modifier = Modifier.weight(1f)) { Text("Stop") }
+        }
+        Spacer(Modifier.height(4.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = onBattery, enabled = state.connected,
+                modifier = Modifier.weight(1f)) { Text("Battery") }
+            Button(onClick = onDeviceInfo, enabled = state.connected,
+                modifier = Modifier.weight(1f)) { Text("Device Info") }
+            Button(onClick = onDisconnect, enabled = state.connected,
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+            ) { Text("Disconnect") }
+        }
+        Spacer(Modifier.height(4.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = onMediaCounts, enabled = state.connected,
+                modifier = Modifier.weight(1f)) { Text("[Exp] Counts") }
+            Button(onClick = onThumbnails, enabled = state.connected,
+                modifier = Modifier.weight(1f)) { Text("Thumbnails") }
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "[Exp] = команды требуют верификации на реальном CY 01_24E5",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun SdkStatusRow(label: String, value: String, ok: Boolean? = null) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(label, style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            value,
+            style = MaterialTheme.typography.bodySmall,
+            color = when (ok) {
+                true -> StatusOnline
+                false -> StatusError
+                null -> MaterialTheme.colorScheme.onSurface
+            }
+        )
     }
 }

@@ -213,19 +213,58 @@ SDK may return wrong credentials. Hardcoded fallback: **`123456789`**
 
 ---
 
+## Confirmed Public API (from javap on glasses_sdk_20250723_v01.aar)
+
+> **Note:** The AAR file (`glasses_sdk_20250723_v01.aar`) is present locally in `app/libs/`
+> but is excluded from Git via `.git/info/exclude`. Do NOT commit it.
+
+| Class | Method | Notes |
+|---|---|---|
+| `SDKInit` | `getInstance()`, `setSDKType(int)`, `SDK_TYPE_QC`, `SDK_TYPE_MY` | Init type |
+| `BleBaseControl` | `getInstance(Context)`, `setmContext(Context)` | Context setup |
+| `BleOperateManager` | `getInstance(Application)`, `getInstance()`, `setCallback(OnGattEventCallback)`, `connectDirectly(String)`, `connectWithScan(String)`, `disconnect()`, `isConnected()`, `isReady()` | BLE connection |
+| `BleScannerHelper` | `getInstance()`, `scanDevice(Context, UUID, ScanWrapperCallback)`, `scanTheDevice(Context, String, OnTheScanResult)`, `stopScan(Context)` | BLE scan |
+| `LargeDataHandler` | `getInstance()`, `initEnable()`, `disEnable()`, `syncBattery()`, `addBatteryCallBack(String, ILargeDataResponse<BatteryResponse>)`, `removeBatteryCallBack(String)`, `syncDeviceInfo(ILargeDataResponse<DeviceInfoResponse>)`, `glassesControl(byte[], ILargeDataResponse<GlassModelControlResponse>)`, `getPictureThumbnails(ILargeDataImageResponse)` | Commands |
+| `CameraReq` | `CameraReq(byte)`, `getData()` (from BaseReqCmd), `ACTION_INTO_CAMARA_UI=4`, `ACTION_KEEP_SCREEN_ON=5`, `ACTION_FINISH=6` | Camera commands |
+| `GlassModelControlReq` | `GlassModelControlReq(int, int)`, `getData()` (from BaseReqCmd) | Media/mode control |
+| `BatteryResponse` | `getBattery()`, `isCharging()` | Battery data |
+| `DeviceInfoResponse` | `getFirmwareVersion()`, `getHardwareVersion()`, `getWifiFirmwareVersion()`, `getWifiHardwareVersion()` | Device info |
+| `GlassModelControlResponse` | `getDataType()`, `getGlassWorkType()`, `getImageCount()`, `getVideoCount()`, `getRecordCount()`, `getP2pIp()`, `getErrorCode()`, `getWorkTypeIng()`, `getVideoAngle()`, `getVideoDuration()`, `getOtaStatus()` | Media/mode response |
+
+### GlassModelControlReq — Experimental mapping
+
+`GlassModelControlReq(param1, param2)` produces `subData = [2, param1, param2]` (from bytecode).
+**param1/param2 semantic mapping has NOT been verified on real CY 01_24E5 hardware.**
+Current candidates used in `HeyCyanSdkBridgeImpl`:
+
+| Command | param1 | param2 | Basis |
+|---|---|---|---|
+| Video start | 1 | 2 | Candidate from CMD_VIDEO_START byte 0x02 |
+| Video stop | 1 | 3 | Candidate from CMD_VIDEO_STOP byte 0x03 |
+| Audio start | 1 | 8 | Candidate from CMD_AUDIO_START byte 0x08 |
+| Audio stop | 1 | 12 | Candidate from CMD_AUDIO_STOP byte 0x0C |
+| Wi-Fi start | 1 | 4 | Candidate from CMD_WIFI_TRANSFER_START byte 0x04 |
+| Media query | 0 | 0 | Speculative — unconfirmed |
+
+All experimental commands require explicit user confirmation before use in production flows.
+
+---
+
 ## CyanBridge Integration Status
 
 | Component | File | Status |
 |---|---|---|
 | GlassesMode enum | `domain/model/GlassesStatus.kt` | ✅ FAKE / NATIVE_BLE_DIAGNOSTIC / HEYCYAN_SDK |
 | BLE protocol constants | `glasses/protocol/HeyCyanProtocol.kt` | ⚠️ candidate service UUIDs + command bytes, pending verification |
-| SDK adapter interface | `glasses/sdk/HeyCyanSdkBridge.kt` | ✅ created |
-| SDK adapter stub | `glasses/sdk/HeyCyanSdkBridgeImpl.kt` | ✅ stub with full AAR API docs |
+| SDK adapter interface | `glasses/sdk/HeyCyanSdkBridge.kt` | ✅ real SDK methods + diagnosticsState |
+| SDK adapter impl | `glasses/sdk/HeyCyanSdkBridgeImpl.kt` | ✅ real SDK calls via AAR |
+| SDK diagnostics state | `glasses/sdk/SdkDiagnosticsState.kt` | ✅ full diagnostic data class |
 | State mapper | `glasses/sdk/HeyCyanSdkStateMapper.kt` | ✅ notification frame parsing |
-| SDK controller | `glasses/sdk/HeyCyanSdkGlassesController.kt` | ⚠️ adapter prepared; AAR required before SDK mode works |
+| SDK controller | `glasses/sdk/HeyCyanSdkGlassesController.kt` | ✅ delegates to bridge; observes diagnosticsState |
+| Settings diagnostics | `ui/screens/settings/SettingsScreen.kt` | ✅ SDK diagnostics panel in HEYCYAN_SDK mode |
+| Settings ViewModel | `ui/screens/settings/SettingsViewModel.kt` | ✅ SDK action methods |
 | Wi-Fi transfer | `glasses/wifi/HeyCyanWiFiTransfer.kt` | 📋 TODO structure |
 | Device sync | `glasses/sync/DeviceSyncManager.kt` | ✅ 3-mode support |
 | DI binding | `core/di/GlassesModule.kt` | ✅ bridge binding |
 | AAR dependency | `app/build.gradle.kts` | ✅ fileTree in libs/ |
-| Cleartext HTTP | `AndroidManifest.xml` + `network_security_config.xml` | ✅ limited to candidate local hotspot IPs |
-| AAR file | `app/libs/glasses_sdk_20250723_v01.aar` | ❌ MISSING — see app/libs/README.md |
+| AAR file | `app/libs/glasses_sdk_20250723_v01.aar` | ✅ present locally, excluded from Git |

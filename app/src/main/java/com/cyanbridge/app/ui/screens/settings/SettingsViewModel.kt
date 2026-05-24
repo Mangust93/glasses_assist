@@ -7,6 +7,8 @@ import com.cyanbridge.app.domain.interfaces.NotesRepository
 import com.cyanbridge.app.domain.interfaces.SettingsRepository
 import com.cyanbridge.app.domain.interfaces.VoiceInteractionRepository
 import com.cyanbridge.app.domain.model.GlassesMode
+import com.cyanbridge.app.glasses.sdk.HeyCyanSdkBridge
+import com.cyanbridge.app.glasses.sdk.SdkDiagnosticsState
 import com.cyanbridge.app.network.DynamicBaseUrlInterceptor
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,7 +34,8 @@ class SettingsViewModel @Inject constructor(
     private val hermesApiClient: HermesApiClient,
     private val voiceInteractionRepository: VoiceInteractionRepository,
     private val notesRepository: NotesRepository,
-    private val dynamicBaseUrlInterceptor: DynamicBaseUrlInterceptor
+    private val dynamicBaseUrlInterceptor: DynamicBaseUrlInterceptor,
+    private val sdkBridge: HeyCyanSdkBridge
 ) : ViewModel() {
 
     val hermesBaseUrl: StateFlow<String> = settingsRepository.hermesBaseUrl
@@ -52,6 +55,70 @@ class SettingsViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
+
+    val sdkDiagnostics: StateFlow<SdkDiagnosticsState> = sdkBridge.diagnosticsState
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SdkDiagnosticsState())
+
+    fun runSdkInit() {
+        viewModelScope.launch {
+            runCatching { sdkBridge.initSdk() }
+                .onFailure { Timber.e(it, "SettingsVM: sdkInit failed") }
+        }
+    }
+
+    fun runSdkScan() {
+        viewModelScope.launch {
+            runCatching { sdkBridge.startScan() }
+                .onFailure { Timber.e(it, "SettingsVM: sdkScan failed") }
+        }
+    }
+
+    fun runSdkStopScan() {
+        viewModelScope.launch {
+            runCatching { sdkBridge.stopScan() }
+        }
+    }
+
+    fun runSdkConnect(address: String) {
+        viewModelScope.launch {
+            runCatching { sdkBridge.connectToDevice(address) }
+                .onFailure { Timber.e(it, "SettingsVM: sdkConnect failed") }
+        }
+    }
+
+    fun runSdkDisconnect() {
+        viewModelScope.launch {
+            runCatching { sdkBridge.disconnect() }
+        }
+    }
+
+    fun runSdkBattery() {
+        viewModelScope.launch {
+            runCatching { sdkBridge.syncBattery() }
+                .onFailure { Timber.e(it, "SettingsVM: sdkBattery failed") }
+        }
+    }
+
+    fun runSdkDeviceInfo() {
+        viewModelScope.launch {
+            runCatching { sdkBridge.readDeviceInfo() }
+                .onFailure { Timber.e(it, "SettingsVM: sdkDeviceInfo failed") }
+        }
+    }
+
+    fun runSdkMediaCounts() {
+        viewModelScope.launch {
+            runCatching { sdkBridge.readMediaCounts() }
+                .onFailure { Timber.e(it, "SettingsVM: sdkMediaCounts failed") }
+        }
+    }
+
+    fun runSdkThumbnails() {
+        viewModelScope.launch {
+            runCatching { sdkBridge.readPictureThumbnails() }
+                .onFailure { Timber.e(it, "SettingsVM: sdkThumbnails failed") }
+        }
+    }
 
     fun setHermesBaseUrl(url: String) {
         viewModelScope.launch {

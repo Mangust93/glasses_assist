@@ -1,12 +1,12 @@
 package com.cyanbridge.app.glasses.sdk
 
-import android.content.Context
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * Adapter interface for the official HeyCyan AAR SDK (glasses_sdk_20250723_v01.aar).
  *
- * Implemented by [HeyCyanSdkBridgeImpl], which is a documented stub until the AAR is placed
- * in app/libs/. See docs/heycyan-sdk-analysis.md for the full SDK API reference.
+ * Implemented by [HeyCyanSdkBridgeImpl] using real SDK classes from the AAR.
+ * See docs/heycyan-sdk-analysis.md for the full SDK API reference.
  *
  * [HeyCyanSdkGlassesController] queries [isAarAvailable] before running SDK-mode
  * operations. Without the AAR, SDK-mode operations must fail explicitly.
@@ -16,15 +16,20 @@ interface HeyCyanSdkBridge {
     /** True only when glasses_sdk_20250723_v01.aar is present and initialized. */
     fun isAarAvailable(): Boolean
 
-    suspend fun initSdk(context: Context)
+    /** Live SDK diagnostics state — observed by the Settings UI and controller. */
+    val diagnosticsState: StateFlow<SdkDiagnosticsState>
+
+    suspend fun initSdk()
 
     // BLE lifecycle
     suspend fun startScan()
     suspend fun stopScan()
     suspend fun connectToDevice(address: String)
     suspend fun disconnect()
+    fun isConnected(): Boolean
+    fun isReady(): Boolean
 
-    // Capture commands
+    // Capture commands (Experimental: byte mapping pending real-device verification)
     suspend fun takePhoto()
     suspend fun startVideoRecording()
     suspend fun stopVideoRecording()
@@ -33,13 +38,26 @@ interface HeyCyanSdkBridge {
 
     suspend fun getBatteryLevel(): Int?
 
+    // Diagnostics actions — results surface in [diagnosticsState]
+    suspend fun syncBattery()
+    suspend fun readDeviceInfo()
+
+    /**
+     * [Experimental] Queries media counts via GlassModelControlReq.
+     * param1/param2 mapping is not yet verified on real CY 01_24E5 hardware.
+     */
+    suspend fun readMediaCounts()
+
+    /** Requests picture thumbnails from the device. */
+    suspend fun readPictureThumbnails()
+
     /**
      * Triggers device Wi-Fi hotspot mode via BLE and returns (ssid, password).
      * Note: SDK may return wrong credentials — override password with "123456789" if needed.
      */
     suspend fun openWifiTransferMode(): Pair<String, String>
 
-    /** Returns device IP discovered via BLE notification (byte[6]==0x08 frame). */
+    /** Returns device IP from last GlassModelControlResponse or BLE notification. */
     suspend fun getDeviceWifiIp(): String?
 
     fun release()
