@@ -90,8 +90,11 @@ class HeyCyanSdkGlassesController @Inject constructor(
     @SuppressLint("MissingPermission")
     override suspend fun startScan() {
         if (bridge.isAarAvailable()) {
-            _status.value = GlassesStatus.Scanning
-            runCatching { bridge.startScan() }
+            runCatching {
+                ensureBridgeInitialized()
+                _status.value = GlassesStatus.Scanning
+                bridge.startScan()
+            }
                 .onFailure {
                     _status.value = GlassesStatus.Error(it.message ?: "Scan error")
                 }
@@ -120,8 +123,11 @@ class HeyCyanSdkGlassesController @Inject constructor(
 
     override suspend fun connect(address: String) {
         if (bridge.isAarAvailable()) {
-            lastConnectedAddress = address
-            runCatching { bridge.connectToDevice(address) }
+            runCatching {
+                ensureBridgeInitialized()
+                lastConnectedAddress = address
+                bridge.connectToDevice(address)
+            }
                 .onFailure { _status.value = GlassesStatus.Error(it.message ?: "Connect error") }
             return
         }
@@ -201,6 +207,12 @@ class HeyCyanSdkGlassesController @Inject constructor(
     // -------------------------------------------------------------------------
     // Status mapping
     // -------------------------------------------------------------------------
+
+    private suspend fun ensureBridgeInitialized() {
+        if (!bridge.diagnosticsState.value.sdkInitialized) {
+            bridge.initSdk()
+        }
+    }
 
     private fun SdkDiagnosticsState.toGlassesStatus(): GlassesStatus = when {
         !sdkInitialized -> GlassesStatus.Disconnected

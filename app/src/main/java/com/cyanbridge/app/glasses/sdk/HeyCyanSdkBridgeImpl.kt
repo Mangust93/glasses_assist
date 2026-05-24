@@ -14,7 +14,6 @@ import com.oudmon.ble.base.communication.LargeDataHandler
 import com.oudmon.ble.base.communication.bigData.resp.BatteryResponse
 import com.oudmon.ble.base.communication.bigData.resp.DeviceInfoResponse
 import com.oudmon.ble.base.communication.bigData.resp.GlassModelControlResponse
-import com.oudmon.ble.base.communication.req.CameraReq
 import com.oudmon.ble.base.communication.req.GlassModelControlReq
 import com.oudmon.ble.base.scan.BleScannerHelper
 import com.oudmon.ble.base.scan.ScanRecord
@@ -39,18 +38,18 @@ import javax.inject.Singleton
  * SDK initialisation order:
  *   1. SDKInit.getInstance().setSDKType(SDK_TYPE_QC)
  *   2. BleBaseControl.getInstance(context).setmContext(context)
- *   3. BleOperateManager.getInstance(application)  ← creates singleton with Application
- *   4. BleOperateManager.getInstance().setCallback(OnGattEventCallback)
- *   5. LargeDataHandler.getInstance().initEnable()
- *   6. LargeDataHandler.getInstance().addBatteryCallBack(key, callback)
+ *   3. BleOperateManager.getInstance(application) creates singleton with Application
+ *   4. BleOperateManager.init() and enableUUID()
+ *   5. BleOperateManager.setCallback(OnGattEventCallback)
+ *   6. LargeDataHandler.getInstance().initEnable()
+ *   7. LargeDataHandler.getInstance().addBatteryCallBack(key, callback)
  *
  * Connection state is tracked via polling BleOperateManager.isConnected()/isReady()
  * after connectDirectly() because OnGattEventCallback only delivers data frames, not
  * connection state events.
  *
- * Capture commands marked [Experimental] use GlassModelControlReq whose param1/param2
- * mapping has NOT been verified on real CY 01_24E5 hardware. Do NOT expose them as
- * automated actions — require explicit user confirmation in the UI.
+ * Capture and Wi-Fi commands are disabled because request mapping has NOT been verified
+ * on real CY 01_24E5 hardware. The labeled media-count diagnostic remains experimental.
  */
 @Singleton
 class HeyCyanSdkBridgeImpl @Inject constructor(
@@ -64,6 +63,10 @@ class HeyCyanSdkBridgeImpl @Inject constructor(
 
     private var sdkInitialized = false
     private var connectionPollJob: Job? = null
+    private var batteryTimeoutJob: Job? = null
+    private var deviceInfoTimeoutJob: Job? = null
+    private var mediaControlTimeoutJob: Job? = null
+    private var thumbnailsTimeoutJob: Job? = null
 
     // -------------------------------------------------------------------------
     // Availability
@@ -82,33 +85,31 @@ class HeyCyanSdkBridgeImpl @Inject constructor(
     // -------------------------------------------------------------------------
 
     override suspend fun initSdk() {
+        if (sdkInitialized) {
+            recordEvent("SDK already initialized")
+            return
+        }
         try {
             SDKInit.getInstance().setSDKType(SDKInit.SDK_TYPE_QC)
             BleBaseControl.getInstance(context).setmContext(context)
-            val application = context as Application
-            BleOperateManager.getInstance(application)
-            BleOperateManager.getInstance().setCallback(object : OnGattEventCallback {
+            val application = context.applicationContext as Application
+            val manager = BleOperateManager.getInstance(application)
+            manager.init()
+            manager.enableUUID()
+            manager.setCallback(object : OnGattEventCallback {
                 override fun onReceivedData(address: String, data: ByteArray) {
                     Timber.d("HeyCyanSDK: data from $address [${data.size}B]")
-                    _diagnostics.value = _diagnostics.value.copy(
-                        lastEvent = "Data: ${data.size}B from $address"
-                    )
+                    recordEvent("Data: ${data.size}B from $address")
                 }
             })
             LargeDataHandler.getInstance().initEnable()
             LargeDataHandler.getInstance().addBatteryCallBack(BATTERY_KEY, batteryCallback)
             sdkInitialized = true
-            _diagnostics.value = _diagnostics.value.copy(
-                sdkInitialized = true,
-                lastEvent = "SDK initialized (QC type)"
-            )
+            recordEvent("SDK initialized (QC type)") { it.copy(sdkInitialized = true) }
             Timber.d("HeyCyanSDK: initialized")
         } catch (e: Exception) {
             Timber.e(e, "HeyCyanSDK: init failed")
-            _diagnostics.value = _diagnostics.value.copy(
-                sdkInitialized = false,
-                lastError = "Init failed: ${e.message}"
-            )
+            recordError("Init failed: ${e.message}") { it.copy(sdkInitialized = false) }
             throw e
         }
     }
@@ -119,26 +120,22 @@ class HeyCyanSdkBridgeImpl @Inject constructor(
 
     override suspend fun startScan() {
         requireInitialized()
-        _diagnostics.value = _diagnostics.value.copy(lastEvent = "Scanning…")
+        recordEvent("Scanning...")
         BleScannerHelper.getInstance().scanDevice(context, null, object : ScanWrapperCallback {
             override fun onStart() {
-                _diagnostics.value = _diagnostics.value.copy(lastEvent = "Scan started")
+                recordEvent("Scan started")
             }
             override fun onStop() {
-                _diagnostics.value = _diagnostics.value.copy(lastEvent = "Scan stopped")
+                recordEvent("Scan stopped")
             }
             override fun onLeScan(device: BluetoothDevice, rssi: Int, scanRecord: ByteArray) {
                 val name = runCatching { device.name }.getOrNull() ?: "?"
                 Timber.d("HeyCyanSDK: scan found $name @ ${device.address}")
-                _diagnostics.value = _diagnostics.value.copy(
-                    lastEvent = "Found: $name (${device.address})"
-                )
+                recordEvent("Found: $name (${device.address})")
             }
             override fun onScanFailed(errorCode: Int) {
                 Timber.e("HeyCyanSDK: scan failed code=$errorCode")
-                _diagnostics.value = _diagnostics.value.copy(
-                    lastError = "Scan failed: code $errorCode"
-                )
+                recordError("Scan failed: code $errorCode")
             }
             override fun onParsedData(device: BluetoothDevice, record: ScanRecord) {}
             override fun onBatchScanResults(results: List<ScanResult>) {}
@@ -147,7 +144,7 @@ class HeyCyanSdkBridgeImpl @Inject constructor(
 
     override suspend fun stopScan() {
         BleScannerHelper.getInstance().stopScan(context)
-        _diagnostics.value = _diagnostics.value.copy(lastEvent = "Scan stopped")
+        recordEvent("Scan stopped")
     }
 
     // -------------------------------------------------------------------------
@@ -156,24 +153,20 @@ class HeyCyanSdkBridgeImpl @Inject constructor(
 
     override suspend fun connectToDevice(address: String) {
         requireInitialized()
-        _diagnostics.value = _diagnostics.value.copy(
-            connected = false, ready = false,
-            lastEvent = "Connecting to $address…"
-        )
+        recordEvent("Connecting to $address...") {
+            it.copy(connected = false, ready = false, lastError = null)
+        }
         BleOperateManager.getInstance().connectDirectly(address)
         startConnectionPolling()
     }
 
     override suspend fun disconnect() {
         connectionPollJob?.cancel()
+        cancelResponseTimeouts()
         runCatching { BleOperateManager.getInstance()?.disconnect() }
-        LargeDataHandler.getInstance().removeBatteryCallBack(BATTERY_KEY)
-        _diagnostics.value = _diagnostics.value.copy(
-            connected = false,
-            ready = false,
-            battery = null,
-            lastEvent = "Disconnected"
-        )
+        recordEvent("Disconnected") {
+            it.copy(connected = false, ready = false, battery = null, isCharging = null)
+        }
         Timber.d("HeyCyanSDK: disconnected")
     }
 
@@ -183,29 +176,29 @@ class HeyCyanSdkBridgeImpl @Inject constructor(
 
     override suspend fun getBatteryLevel(): Int? {
         if (!isConnected()) return null
-        LargeDataHandler.getInstance().syncBattery()
-        return _diagnostics.value.battery
+        syncBattery()
+        return null
     }
 
     override suspend fun syncBattery() {
         if (!isConnected()) {
-            _diagnostics.value = _diagnostics.value.copy(lastError = "Not connected")
+            recordError("Battery request failed: not connected")
             return
         }
-        _diagnostics.value = _diagnostics.value.copy(lastEvent = "Syncing battery…")
+        recordEvent("Requesting battery...")
+        batteryTimeoutJob = responseTimeout(batteryTimeoutJob, "Battery request")
         LargeDataHandler.getInstance().syncBattery()
     }
 
     private val batteryCallback = object : ILargeDataResponse<BatteryResponse> {
         override fun parseData(code: Int, data: BatteryResponse) {
+            batteryTimeoutJob?.cancel()
             val level = data.getBattery()
             val charging = data.isCharging()
             Timber.d("HeyCyanSDK: battery $level% charging=$charging (code=$code)")
-            _diagnostics.value = _diagnostics.value.copy(
-                battery = level,
-                isCharging = charging,
-                lastEvent = "Battery: $level%${if (charging) " (charging)" else ""}"
-            )
+            recordEvent("Battery: $level%${if (charging) " (charging)" else ""}") {
+                it.copy(battery = level, isCharging = charging)
+            }
         }
     }
 
@@ -215,22 +208,25 @@ class HeyCyanSdkBridgeImpl @Inject constructor(
 
     override suspend fun readDeviceInfo() {
         if (!isConnected()) {
-            _diagnostics.value = _diagnostics.value.copy(lastError = "Not connected")
+            recordError("Device info request failed: not connected")
             return
         }
-        _diagnostics.value = _diagnostics.value.copy(lastEvent = "Reading device info…")
+        recordEvent("Requesting device info...")
+        deviceInfoTimeoutJob = responseTimeout(deviceInfoTimeoutJob, "Device info request")
         LargeDataHandler.getInstance().syncDeviceInfo(object : ILargeDataResponse<DeviceInfoResponse> {
             override fun parseData(code: Int, data: DeviceInfoResponse) {
+                deviceInfoTimeoutJob?.cancel()
                 val fw = data.getFirmwareVersion()
                 val hw = data.getHardwareVersion()
                 val wfw = data.getWifiFirmwareVersion()
-                Timber.d("HeyCyanSDK: fw=$fw hw=$hw wfw=$wfw (code=$code)")
-                _diagnostics.value = _diagnostics.value.copy(
-                    firmwareVersion = fw,
-                    hardwareVersion = hw,
-                    wifiFirmwareVersion = wfw,
-                    lastEvent = "Device info: fw=$fw hw=$hw"
-                )
+                val whw = data.getWifiHardwareVersion()
+                Timber.d("HeyCyanSDK: fw=$fw hw=$hw wfw=$wfw whw=$whw (code=$code)")
+                recordEvent("Device info: fw=$fw hw=$hw") {
+                    it.copy(
+                        firmwareVersion = fw, hardwareVersion = hw,
+                        wifiFirmwareVersion = wfw, wifiHardwareVersion = whw
+                    )
+                }
             }
         })
     }
@@ -246,34 +242,41 @@ class HeyCyanSdkBridgeImpl @Inject constructor(
      */
     override suspend fun readMediaCounts() {
         if (!isConnected()) {
-            _diagnostics.value = _diagnostics.value.copy(lastError = "Not connected")
+            recordError("[Exp] Media counts request failed: not connected")
             return
         }
-        _diagnostics.value = _diagnostics.value.copy(lastEvent = "[Exp] Reading media counts…")
+        recordEvent("[Exp] Requesting media counts...")
         try {
             val req = GlassModelControlReq(0, 0)
+            mediaControlTimeoutJob = responseTimeout(mediaControlTimeoutJob, "[Exp] Media counts request")
             LargeDataHandler.getInstance().glassesControl(
                 req.getData(),
                 object : ILargeDataResponse<GlassModelControlResponse> {
                     override fun parseData(code: Int, data: GlassModelControlResponse) {
+                        mediaControlTimeoutJob?.cancel()
                         val imgs = data.getImageCount()
                         val vids = data.getVideoCount()
                         val recs = data.getRecordCount()
                         val ip = data.getP2pIp()
-                        Timber.d("HeyCyanSDK: [Exp] mediaCount imgs=$imgs vids=$vids recs=$recs ip=$ip code=$code err=${data.getErrorCode()}")
-                        _diagnostics.value = _diagnostics.value.copy(
-                            imageCount = imgs,
-                            videoCount = vids,
-                            recordCount = recs,
-                            p2pIp = ip?.takeIf { it.isNotBlank() },
-                            lastEvent = "[Exp] Media: imgs=$imgs vids=$vids recs=$recs"
-                        )
+                        val error = data.getErrorCode()
+                        Timber.d("HeyCyanSDK: [Exp] mediaCount imgs=$imgs vids=$vids recs=$recs ip=$ip code=$code err=$error")
+                        if (error != 0) {
+                            recordError("[Exp] Media counts callback error: code=$code err=$error")
+                            return
+                        }
+                        recordEvent("[Exp] Media: imgs=$imgs vids=$vids recs=$recs") {
+                            it.copy(
+                                imageCount = imgs, videoCount = vids, recordCount = recs,
+                                p2pIp = ip?.takeIf { value -> value.isNotBlank() }
+                            )
+                        }
                     }
                 }
             )
         } catch (e: Exception) {
+            mediaControlTimeoutJob?.cancel()
             Timber.e(e, "HeyCyanSDK: readMediaCounts failed")
-            _diagnostics.value = _diagnostics.value.copy(lastError = "readMediaCounts: ${e.message}")
+            recordError("[Exp] Media counts failed: ${e.message}")
         }
     }
 
@@ -283,19 +286,23 @@ class HeyCyanSdkBridgeImpl @Inject constructor(
 
     override suspend fun readPictureThumbnails() {
         if (!isConnected()) {
-            _diagnostics.value = _diagnostics.value.copy(lastError = "Not connected")
+            recordError("Thumbnail request failed: not connected")
             return
         }
-        _diagnostics.value = _diagnostics.value.copy(lastEvent = "Fetching thumbnails…")
+        recordEvent("Requesting picture thumbnails...")
+        thumbnailsTimeoutJob = responseTimeout(thumbnailsTimeoutJob, "Picture thumbnails request")
         var count = 0
         LargeDataHandler.getInstance().getPictureThumbnails(object : ILargeDataImageResponse {
             override fun parseData(code: Int, isLast: Boolean, data: ByteArray) {
+                thumbnailsTimeoutJob?.cancel()
                 count++
                 Timber.d("HeyCyanSDK: thumbnail chunk $count [${data.size}B] last=$isLast code=$code")
-                _diagnostics.value = _diagnostics.value.copy(
-                    thumbnailsReceived = count,
-                    lastEvent = "Thumbnail $count [${data.size}B]${if (isLast) " (last)" else ""}"
-                )
+                recordEvent("Thumbnail $count [${data.size}B]${if (isLast) " (last)" else ""}") {
+                    it.copy(thumbnailsReceived = count)
+                }
+                if (!isLast) {
+                    thumbnailsTimeoutJob = responseTimeout(null, "Picture thumbnails request")
+                }
             }
         })
     }
@@ -305,113 +312,32 @@ class HeyCyanSdkBridgeImpl @Inject constructor(
     // -------------------------------------------------------------------------
 
     /**
-     * [Experimental] Enters camera UI via CameraReq(ACTION_INTO_CAMARA_UI=4).
-     * ACTION_FINISH (6) corresponds to byte 0x06 in CMD_TAKE_PHOTO candidate sequence.
-     * Verified payload behaviour on real CY 01_24E5 pending.
+     * [Experimental] Capture mappings are candidates only.
+     * Disabled until explicit real-device verification on CY 01_24E5.
      */
-    override suspend fun takePhoto() {
-        requireConnected()
-        _diagnostics.value = _diagnostics.value.copy(lastEvent = "[Exp] takePhoto…")
-        try {
-            val req = CameraReq(CameraReq.ACTION_INTO_CAMARA_UI)
-            LargeDataHandler.getInstance().glassesControl(req.getData(), mediaControlCallback)
-        } catch (e: Exception) {
-            Timber.e(e, "HeyCyanSDK: takePhoto failed")
-            _diagnostics.value = _diagnostics.value.copy(lastError = "takePhoto: ${e.message}")
-        }
-    }
+    override suspend fun takePhoto() = rejectUnverifiedCommand("take photo")
 
-    /**
-     * [Experimental] GlassModelControlReq param mapping for video start not verified.
-     * subData=[2,1,2] is a candidate based on bytecode analysis.
-     */
-    override suspend fun startVideoRecording() {
-        requireConnected()
-        _diagnostics.value = _diagnostics.value.copy(lastEvent = "[Exp] startVideo…")
-        try {
-            val req = GlassModelControlReq(1, 2)
-            LargeDataHandler.getInstance().glassesControl(req.getData(), mediaControlCallback)
-        } catch (e: Exception) {
-            Timber.e(e, "HeyCyanSDK: startVideoRecording failed")
-            _diagnostics.value = _diagnostics.value.copy(lastError = "startVideo: ${e.message}")
-        }
-    }
+    /** [Experimental] Video mapping is disabled pending real-device verification. */
+    override suspend fun startVideoRecording() = rejectUnverifiedCommand("start video")
 
-    /** [Experimental] GlassModelControlReq param mapping for video stop not verified. */
-    override suspend fun stopVideoRecording() {
-        requireConnected()
-        _diagnostics.value = _diagnostics.value.copy(lastEvent = "[Exp] stopVideo…")
-        try {
-            val req = GlassModelControlReq(1, 3)
-            LargeDataHandler.getInstance().glassesControl(req.getData(), mediaControlCallback)
-        } catch (e: Exception) {
-            Timber.e(e, "HeyCyanSDK: stopVideoRecording failed")
-            _diagnostics.value = _diagnostics.value.copy(lastError = "stopVideo: ${e.message}")
-        }
-    }
+    /** [Experimental] Video mapping is disabled pending real-device verification. */
+    override suspend fun stopVideoRecording() = rejectUnverifiedCommand("stop video")
 
-    /** [Experimental] GlassModelControlReq param mapping for audio start not verified. */
-    override suspend fun startAudioRecording() {
-        requireConnected()
-        _diagnostics.value = _diagnostics.value.copy(lastEvent = "[Exp] startAudio…")
-        try {
-            val req = GlassModelControlReq(1, 8)
-            LargeDataHandler.getInstance().glassesControl(req.getData(), mediaControlCallback)
-        } catch (e: Exception) {
-            Timber.e(e, "HeyCyanSDK: startAudioRecording failed")
-            _diagnostics.value = _diagnostics.value.copy(lastError = "startAudio: ${e.message}")
-        }
-    }
+    /** [Experimental] Audio mapping is disabled pending real-device verification. */
+    override suspend fun startAudioRecording() = rejectUnverifiedCommand("start audio")
 
-    /** [Experimental] GlassModelControlReq param mapping for audio stop not verified. */
-    override suspend fun stopAudioRecording() {
-        requireConnected()
-        _diagnostics.value = _diagnostics.value.copy(lastEvent = "[Exp] stopAudio…")
-        try {
-            val req = GlassModelControlReq(1, 12)
-            LargeDataHandler.getInstance().glassesControl(req.getData(), mediaControlCallback)
-        } catch (e: Exception) {
-            Timber.e(e, "HeyCyanSDK: stopAudioRecording failed")
-            _diagnostics.value = _diagnostics.value.copy(lastError = "stopAudio: ${e.message}")
-        }
-    }
-
-    private val mediaControlCallback = object : ILargeDataResponse<GlassModelControlResponse> {
-        override fun parseData(code: Int, data: GlassModelControlResponse) {
-            val err = data.getErrorCode()
-            val workType = data.getGlassWorkType()
-            val ip = data.getP2pIp()
-            Timber.d("HeyCyanSDK: mediaControl code=$code err=$err workType=$workType ip=$ip")
-            if (err != 0) {
-                _diagnostics.value = _diagnostics.value.copy(
-                    lastError = "Media control error: code=$code err=$err"
-                )
-            } else {
-                _diagnostics.value = _diagnostics.value.copy(
-                    p2pIp = ip?.takeIf { it.isNotBlank() },
-                    imageCount = data.getImageCount().takeIf { it != 0 },
-                    videoCount = data.getVideoCount().takeIf { it != 0 },
-                    recordCount = data.getRecordCount().takeIf { it != 0 },
-                    lastEvent = "Media control ok (workType=$workType)"
-                )
-            }
-        }
-    }
+    /** [Experimental] Audio mapping is disabled pending real-device verification. */
+    override suspend fun stopAudioRecording() = rejectUnverifiedCommand("stop audio")
 
     // -------------------------------------------------------------------------
     // Wi-Fi transfer
     // -------------------------------------------------------------------------
 
     /**
-     * [Experimental] Triggers Wi-Fi transfer mode via GlassModelControlReq.
-     * param mapping for Wi-Fi start not fully verified.
+     * [Experimental] Disabled pending verification of the Wi-Fi command and credentials.
      */
-    override suspend fun openWifiTransferMode(): Pair<String, String> {
-        requireConnected()
-        val req = GlassModelControlReq(1, 4)
-        LargeDataHandler.getInstance().glassesControl(req.getData(), mediaControlCallback)
-        return Pair("", "123456789")
-    }
+    override suspend fun openWifiTransferMode(): Pair<String, String> =
+        rejectUnverifiedCommand("Wi-Fi transfer mode")
 
     override suspend fun getDeviceWifiIp(): String? = _diagnostics.value.p2pIp
 
@@ -421,13 +347,16 @@ class HeyCyanSdkBridgeImpl @Inject constructor(
 
     override fun release() {
         connectionPollJob?.cancel()
+        cancelResponseTimeouts()
         runCatching {
+            BleOperateManager.getInstance()?.disconnect()
             LargeDataHandler.getInstance().removeBatteryCallBack(BATTERY_KEY)
             LargeDataHandler.getInstance().disEnable()
         }
-        _diagnostics.value = _diagnostics.value.copy(
-            connected = false, ready = false, lastEvent = "Released"
-        )
+        sdkInitialized = false
+        recordEvent("Released") {
+            it.copy(sdkInitialized = false, connected = false, ready = false, battery = null, isCharging = null)
+        }
         Timber.d("HeyCyanSDK: released")
     }
 
@@ -447,21 +376,53 @@ class HeyCyanSdkBridgeImpl @Inject constructor(
                     ready = ready
                 )
                 if (connected && ready) {
-                    _diagnostics.value = _diagnostics.value.copy(lastEvent = "Connected and ready")
+                    recordEvent("Connected and ready")
                     Timber.d("HeyCyanSDK: connected and ready")
                     return@launch
                 }
-                if (connected) {
-                    _diagnostics.value = _diagnostics.value.copy(lastEvent = "Connected, waiting for ready…")
-                }
             }
-            if (!isConnected()) {
-                _diagnostics.value = _diagnostics.value.copy(
-                    connected = false, ready = false,
-                    lastError = "Connection timeout"
-                )
+            runCatching { BleOperateManager.getInstance()?.disconnect() }
+            recordError("Connection timeout: device did not become ready") {
+                it.copy(connected = false, ready = false)
             }
         }
+    }
+
+    private fun responseTimeout(previous: Job?, request: String): Job {
+        previous?.cancel()
+        return scope.launch {
+            delay(RESPONSE_TIMEOUT_MS)
+            recordError("$request timeout: no SDK callback")
+        }
+    }
+
+    private fun cancelResponseTimeouts() {
+        batteryTimeoutJob?.cancel()
+        deviceInfoTimeoutJob?.cancel()
+        mediaControlTimeoutJob?.cancel()
+        thumbnailsTimeoutJob?.cancel()
+    }
+
+    private fun recordEvent(message: String, update: (SdkDiagnosticsState) -> SdkDiagnosticsState = { it }) {
+        val next = update(_diagnostics.value)
+        _diagnostics.value = next.copy(
+            lastEvent = message,
+            eventLog = (next.eventLog + message).takeLast(EVENT_LOG_LIMIT)
+        )
+    }
+
+    private fun recordError(message: String, update: (SdkDiagnosticsState) -> SdkDiagnosticsState = { it }) {
+        val next = update(_diagnostics.value)
+        _diagnostics.value = next.copy(
+            lastError = message,
+            eventLog = (next.eventLog + "ERROR: $message").takeLast(EVENT_LOG_LIMIT)
+        )
+    }
+
+    private fun rejectUnverifiedCommand(command: String): Nothing {
+        val message = "[Experimental] $command disabled pending real-device verification"
+        recordError(message)
+        throw UnsupportedOperationException(message)
     }
 
     private fun requireInitialized() {
@@ -470,12 +431,9 @@ class HeyCyanSdkBridgeImpl @Inject constructor(
         )
     }
 
-    private fun requireConnected() {
-        requireInitialized()
-        if (!isConnected()) throw SdkNotAvailableException("Not connected to device.")
-    }
-
     companion object {
         private const val BATTERY_KEY = "cyanbridge_battery"
+        private const val RESPONSE_TIMEOUT_MS = 10_000L
+        private const val EVENT_LOG_LIMIT = 20
     }
 }

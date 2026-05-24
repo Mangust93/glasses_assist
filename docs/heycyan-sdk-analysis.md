@@ -5,10 +5,10 @@
 - `ebowwa/HeyCyanSmartGlassesSDK`
 - `FerSaiyan/Alternative-HeyCyan-App-and-SDK`
 
-**Verification status:** this repository does not include
-`app/libs/glasses_sdk_20250723_v01.aar`, a local SDK sample, or a real GATT dump from
-CY 01_24E5. UUIDs, command bytes, and notification frames below are candidates from
-external source analysis and remain pending local AAR/sample and real-device verification.
+**Verification status:** `app/libs/glasses_sdk_20250723_v01.aar` is present locally and excluded
+from Git through `.git/info/exclude`. Public Android API signatures below were verified with
+`javap` on that local AAR. Command semantics and notification behavior remain pending
+real-device verification on CY 01_24E5.
 
 ---
 
@@ -45,8 +45,8 @@ Use `NATIVE_BLE_DIAGNOSTIC` mode to log real UUIDs from the device, then fill in
 ## BLE Command Byte Candidates
 
 Candidates attributed to `LargeDataHandler.glassesControl(ByteArray)` calls in external
-SDK/sample notes. They are not confirmed in this repository until the AAR/sample is added
-locally and verified against the real device:
+SDK/sample notes. Their semantics are not confirmed until they are verified against
+the real device:
 
 | Action | Bytes (hex) |
 |---|---|
@@ -81,60 +81,36 @@ if (data[6].toInt() and 0xFF == 0x08 && data.size >= 11) {
 
 ---
 
-## Android SDK Key Classes (from AAR)
+## Android SDK Invocation Surface (verified with javap)
 
-### Initialization order
+The integration uses these public entry points from the local AAR. Callback results are
+reported as diagnostics only after an SDK callback is received; missing callbacks time out.
+
 ```kotlin
-BleBaseControl.setmContext(context)
-BleOperateManager.getInstance().init()
-LargeDataHandler.getInstance()
-LocalBroadcastManager.getInstance(context)
-    .registerReceiver(receiver, BleAction.getIntentFilter())
+SDKInit.getInstance().setSDKType(SDKInit.SDK_TYPE_QC)
+val manager = BleOperateManager.getInstance(application)
+manager.init()
+manager.enableUUID()
+manager.setCallback(onGattEventCallback)
+manager.connectDirectly(address)
+manager.disconnect()
+manager.isConnected()
+manager.isReady()
+
+BleScannerHelper.getInstance().scanDevice(context, null, callback)
+BleScannerHelper.getInstance().stopScan(context)
+
+LargeDataHandler.getInstance().initEnable()
+LargeDataHandler.getInstance().syncBattery()
+LargeDataHandler.getInstance().syncDeviceInfo(callback)
+LargeDataHandler.getInstance().glassesControl(requestData, callback)
+LargeDataHandler.getInstance().getPictureThumbnails(callback)
+LargeDataHandler.getInstance().disEnable()
 ```
 
-### `LargeDataHandler` (command hub)
-```kotlin
-LargeDataHandler.getInstance().glassesControl(ByteArray)     // all capture commands
-LargeDataHandler.getInstance().syncTime()
-LargeDataHandler.getInstance().getPictureThumbnails { data -> }
-LargeDataHandler.getInstance().writeIpToSoc(url, callback)   // OTA
-LargeDataHandler.getInstance().addOutDeviceListener(cmdType = 100) { cmdType, response ->
-    // response.imageCount, response.videoCount, response.recordCount
-    // response.dataType, response.errorCode, response.workTypeIng
-}
-```
-
-### `BleOperateManager` (connection)
-```kotlin
-BleOperateManager.getInstance().connectDirectly("91:8E:55:C7:24:E5")
-BleOperateManager.getInstance().unBindDevice()
-BleOperateManager.getInstance().classicBluetoothStartScan()
-```
-
-### `BleScannerHelper` (scan)
-```kotlin
-BleScannerHelper.getInstance().scanDevice(context, null, bleScanCallback)
-// 15s window, max 30 devices
-```
-
-### `QCBluetoothCallbackCloneReceiver` (base class for BLE events)
-```kotlin
-override fun connectStatue(device: BluetoothDevice, connected: Boolean)
-override fun onServiceDiscovered()
-override fun onCharacteristicChange(address: String, uuid: UUID, data: ByteArray)
-override fun onCharacteristicRead(uuid: UUID, data: ByteArray)
-```
-
-### Device name patterns (DeviceClassifier)
-```kotlin
-name.lowercase().contains("heycyan") ||
-name.lowercase().contains("cyan") ||
-name.startsWith("O_") ||
-name.startsWith("Q_")
-// → DeviceClass.HEY_CYAN
-```
-
----
+`GlassModelControlReq(int, int)` is used only for the explicitly labeled experimental
+media-count diagnostic. Capture and Wi-Fi transfer command mappings are disabled in
+the application pending real-device verification.
 
 ## iOS SDK (QCSDK.framework)
 
@@ -161,7 +137,7 @@ name.startsWith("Q_")
 
 ## Wi-Fi Media Transfer
 
-### Flow
+### Candidate flow (disabled pending real-device verification)
 1. BLE: send `02 01 04` → device activates hotspot
 2. BLE notify frame (byte[6]==0x08) → parse IP
 3. Connect phone to device hotspot:
@@ -209,7 +185,7 @@ AUD_001.opus
 ```
 
 ### Wi-Fi password
-SDK may return wrong credentials. Hardcoded fallback: **`123456789`**
+Candidate only: external notes mention fallback `123456789`; Wi-Fi transfer is disabled in CyanBridge pending device verification.
 
 ---
 
@@ -222,7 +198,7 @@ SDK may return wrong credentials. Hardcoded fallback: **`123456789`**
 |---|---|---|
 | `SDKInit` | `getInstance()`, `setSDKType(int)`, `SDK_TYPE_QC`, `SDK_TYPE_MY` | Init type |
 | `BleBaseControl` | `getInstance(Context)`, `setmContext(Context)` | Context setup |
-| `BleOperateManager` | `getInstance(Application)`, `getInstance()`, `setCallback(OnGattEventCallback)`, `connectDirectly(String)`, `connectWithScan(String)`, `disconnect()`, `isConnected()`, `isReady()` | BLE connection |
+| `BleOperateManager` | `getInstance(Application)`, `getInstance()`, `setCallback(OnGattEventCallback)`, `connectDirectly(String)`, `connectWithScan(String)`, `disconnect()`, `isConnected()`, `isReady()`, `init()`, `enableUUID()` | BLE connection |
 | `BleScannerHelper` | `getInstance()`, `scanDevice(Context, UUID, ScanWrapperCallback)`, `scanTheDevice(Context, String, OnTheScanResult)`, `stopScan(Context)` | BLE scan |
 | `LargeDataHandler` | `getInstance()`, `initEnable()`, `disEnable()`, `syncBattery()`, `addBatteryCallBack(String, ILargeDataResponse<BatteryResponse>)`, `removeBatteryCallBack(String)`, `syncDeviceInfo(ILargeDataResponse<DeviceInfoResponse>)`, `glassesControl(byte[], ILargeDataResponse<GlassModelControlResponse>)`, `getPictureThumbnails(ILargeDataImageResponse)` | Commands |
 | `CameraReq` | `CameraReq(byte)`, `getData()` (from BaseReqCmd), `ACTION_INTO_CAMARA_UI=4`, `ACTION_KEEP_SCREEN_ON=5`, `ACTION_FINISH=6` | Camera commands |
@@ -235,7 +211,7 @@ SDK may return wrong credentials. Hardcoded fallback: **`123456789`**
 
 `GlassModelControlReq(param1, param2)` produces `subData = [2, param1, param2]` (from bytecode).
 **param1/param2 semantic mapping has NOT been verified on real CY 01_24E5 hardware.**
-Current candidates used in `HeyCyanSdkBridgeImpl`:
+Candidate mappings retained for real-device testing (only the experimental media query is currently sent by `HeyCyanSdkBridgeImpl`):
 
 | Command | param1 | param2 | Basis |
 |---|---|---|---|
@@ -246,7 +222,7 @@ Current candidates used in `HeyCyanSdkBridgeImpl`:
 | Wi-Fi start | 1 | 4 | Candidate from CMD_WIFI_TRANSFER_START byte 0x04 |
 | Media query | 0 | 0 | Speculative — unconfirmed |
 
-All experimental commands require explicit user confirmation before use in production flows.
+All experimental mappings require verification on CY 01_24E5 before use in production flows. Photo, video, audio, and Wi-Fi transfer commands are currently disabled in the app.
 
 ---
 

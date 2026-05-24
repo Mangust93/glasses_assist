@@ -12,9 +12,7 @@ import javax.inject.Singleton
  * FakeGlassesController, NativeBleGlassesController, and HeyCyanSdkGlassesController
  * are provided via @Inject constructor — no explicit @Provides needed for them.
  *
- * This module binds [HeyCyanSdkBridge] to its stub implementation.
- * When glasses_sdk_20250723_v01.aar is added to app/libs/, update [HeyCyanSdkBridgeImpl]
- * to delegate to LargeDataHandler and set isAarAvailable() = true.
+ * This module binds [HeyCyanSdkBridge] to the local-AAR backed implementation.
  */
 @Module
 @InstallIn(SingletonComponent::class)

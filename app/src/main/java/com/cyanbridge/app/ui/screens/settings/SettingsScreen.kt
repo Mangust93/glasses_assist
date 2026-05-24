@@ -173,9 +173,9 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                         )
                     GlassesMode.HEYCYAN_SDK ->
                         Text(
-                            "HeyCyan SDK mode активен. AAR присутствует. Используйте диагностику ниже.",
+                            "Диагностика HeyCyan SDK. Capture-команды отключены до проверки на реальных очках.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = StatusOnline
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     else -> {}
                 }
@@ -314,17 +314,21 @@ private fun SdkDiagnosticsSection(
         state.firmwareVersion?.let { SdkStatusRow("FW version", it) }
         state.hardwareVersion?.let { SdkStatusRow("HW version", it) }
         state.wifiFirmwareVersion?.let { SdkStatusRow("WiFi FW", it) }
+        state.wifiHardwareVersion?.let { SdkStatusRow("WiFi HW", it) }
         state.imageCount?.let { SdkStatusRow("Images", "$it") }
         state.videoCount?.let { SdkStatusRow("Videos", "$it") }
         state.recordCount?.let { SdkStatusRow("Records", "$it") }
         state.p2pIp?.let { SdkStatusRow("P2P IP", it) }
         state.thumbnailsReceived?.let { SdkStatusRow("Thumbnails rx", "$it chunks") }
 
-        state.lastEvent?.let {
+        if (state.eventLog.isNotEmpty()) {
             Spacer(Modifier.height(4.dp))
-            Text("Event: $it", style = MaterialTheme.typography.bodySmall,
+            Text("Event log:", style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontFamily = FontFamily.Monospace)
+            state.eventLog.takeLast(6).forEach { event ->
+                Text(event, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+            }
         }
         state.lastError?.let {
             Text("Error: $it", style = MaterialTheme.typography.bodySmall,
@@ -360,11 +364,11 @@ private fun SdkDiagnosticsSection(
             Button(onClick = onMediaCounts, enabled = state.connected,
                 modifier = Modifier.weight(1f)) { Text("[Exp] Counts") }
             Button(onClick = onThumbnails, enabled = state.connected,
-                modifier = Modifier.weight(1f)) { Text("Thumbnails") }
+                modifier = Modifier.weight(1f)) { Text("[Test] Thumbs") }
         }
         Spacer(Modifier.height(4.dp))
         Text(
-            "[Exp] = команды требуют верификации на реальном CY 01_24E5",
+            "[Exp]/[Test] = диагностика, ожидающая проверки на реальном CY 01_24E5. Photo/video/audio не включены.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

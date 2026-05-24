@@ -29,7 +29,7 @@ interface HeyCyanSdkBridge {
     fun isConnected(): Boolean
     fun isReady(): Boolean
 
-    // Capture commands (Experimental: byte mapping pending real-device verification)
+    // Capture commands (disabled pending real-device verification)
     suspend fun takePhoto()
     suspend fun startVideoRecording()
     suspend fun stopVideoRecording()
@@ -51,10 +51,7 @@ interface HeyCyanSdkBridge {
     /** Requests picture thumbnails from the device. */
     suspend fun readPictureThumbnails()
 
-    /**
-     * Triggers device Wi-Fi hotspot mode via BLE and returns (ssid, password).
-     * Note: SDK may return wrong credentials — override password with "123456789" if needed.
-     */
+    /** [Experimental] Disabled pending real-device verification of Wi-Fi mode and credentials. */
     suspend fun openWifiTransferMode(): Pair<String, String>
 
     /** Returns device IP from last GlassModelControlResponse or BLE notification. */
